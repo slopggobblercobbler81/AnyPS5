@@ -30,6 +30,7 @@ int APS5_VABI strncat_s_nid_postfix(char*, std::size_t, const char*, std::size_t
 int APS5_VABI memcpy_s_nid_postfix(void*, std::size_t, const void*, std::size_t);
 int APS5_VABI memmove_s_nid_postfix(void*, std::size_t, const void*, std::size_t);
 int APS5_VABI memset_s_nid_postfix(void*, std::size_t, int, std::size_t);
+void* APS5_VABI memccpy_nid_postfix(void*, const void*, int, std::size_t);
 char* APS5_VABI strnstr_nid_postfix(const char*, const char*, std::size_t);
 std::size_t APS5_VABI strxfrm_nid_postfix(char*, const char*, std::size_t);
 int APS5_VABI snprintf_s_nid_postfix(char*, std::size_t, const char*, ...);
@@ -399,6 +400,28 @@ int main() {
     Require(strcasestr_nid_postfix("", "a") == nullptr);
     const char highBytes[] = {static_cast<char>(0xff), 'A', 0};
     Require(strcasestr_nid_postfix(highBytes, "a") == highBytes + 1);
+    char memccpyDest[16];
+    const char memccpySource[] = "hello world";
+    std::memset(memccpyDest, 0x5a, sizeof(memccpyDest));
+    void* memccpyResult = memccpy_nid_postfix(memccpyDest, memccpySource, ' ', sizeof(memccpySource));
+    Require(memccpyResult == memccpyDest + 6);
+    Require(std::memcmp(memccpyDest, "hello ", 6) == 0);
+    Require(static_cast<unsigned char>(memccpyDest[6]) == 0x5a);
+
+    std::memset(memccpyDest, 0x5a, sizeof(memccpyDest));
+    memccpyResult = memccpy_nid_postfix(memccpyDest, memccpySource, 'z', 5);
+    Require(memccpyResult == nullptr);
+    Require(std::memcmp(memccpyDest, "hello", 5) == 0);
+    Require(static_cast<unsigned char>(memccpyDest[5]) == 0x5a);
+
+    memccpyResult = memccpy_nid_postfix(memccpyDest, memccpySource, 'h', 0);
+    Require(memccpyResult == nullptr);
+
+    const unsigned char unsignedSource[] = {0x01, 0xfe, 0x80, 0x7f};
+    unsigned char unsignedDest[4];
+    memccpyResult = memccpy_nid_postfix(unsignedDest, unsignedSource, 0x1fe, 4);
+    Require(memccpyResult == unsignedDest + 2);
+    Require(unsignedDest[0] == 0x01 && unsignedDest[1] == 0xfe);
     CheckSecureCopySizeLimits();
     return CheckMemcpyOverlap() ? 0 : 1;
 }

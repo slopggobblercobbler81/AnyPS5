@@ -120,6 +120,17 @@ void* APS5_VABI memrchr_nid_postfix(const void* s, int c, size_t n) {
     return nullptr;
 }
 
+void* APS5_VABI memccpy_nid_postfix(void* dest, const void* src, int c, size_t n) {
+    auto* destination = static_cast<unsigned char*>(dest);
+    const auto* source = static_cast<const unsigned char*>(src);
+    const auto value = static_cast<unsigned char>(c);
+    for (size_t i = 0; i < n; ++i) {
+        destination[i] = source[i];
+        if (source[i] == value) return destination + i + 1;
+    }
+    return nullptr;
+}
+
 int APS5_VABI strcmp_nid_postfix(const char* s1, const char* s2) {
     return std::strcmp(s1, s2);
 }
