@@ -2,8 +2,6 @@
 #include "prx/libc/include/general/VabiMacros.hpp"
 #include <cstddef>
 #include <cstdint>
-#include <stdexcept>
-#include <string>
 
 extern "C" int* APS5_VABI __error_nid_postfix();
 
@@ -23,41 +21,35 @@ int RejectSignal() {
     *__error_nid_postfix() = InvalidArgument;
     return -1;
 }
-void RequireSet(const GuestSignalSet* set, const char* function) {
-    if (set == nullptr) throw std::invalid_argument(std::string(function) + ": set is null");
-}
 }
 
 extern "C" {
 int APS5_VABI sigemptyset_nid_postfix(GuestSignalSet* set) {
-    RequireSet(set, "sigemptyset");
+    if (set == nullptr) return RejectSignal();
     for (auto& word : set->bits) word = 0;
     return 0;
 }
 
 int APS5_VABI sigfillset_nid_postfix(GuestSignalSet* set) {
-    RequireSet(set, "sigfillset");
+    if (set == nullptr) return RejectSignal();
     for (auto& word : set->bits) word = ~0u;
     return 0;
 }
 
 int APS5_VABI sigaddset_nid_postfix(GuestSignalSet* set, int signal) {
-    RequireSet(set, "sigaddset");
-    if (!ValidSignal(signal)) return RejectSignal();
+    if (set == nullptr || !ValidSignal(signal)) return RejectSignal();
     set->bits[WordIndex(signal)] |= Bit(signal);
     return 0;
 }
 
 int APS5_VABI sigdelset_nid_postfix(GuestSignalSet* set, int signal) {
-    RequireSet(set, "sigdelset");
-    if (!ValidSignal(signal)) return RejectSignal();
+    if (set == nullptr || !ValidSignal(signal)) return RejectSignal();
     set->bits[WordIndex(signal)] &= ~Bit(signal);
     return 0;
 }
 
 int APS5_VABI sigismember_nid_postfix(const GuestSignalSet* set, int signal) {
-    RequireSet(set, "sigismember");
-    if (!ValidSignal(signal)) return RejectSignal();
+    if (set == nullptr || !ValidSignal(signal)) return RejectSignal();
     return (set->bits[WordIndex(signal)] & Bit(signal)) != 0 ? 1 : 0;
 }
 }
