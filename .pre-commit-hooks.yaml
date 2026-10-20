@@ -1,0 +1,7 @@
+- id: commit-msg-guard
+  name: commit-msg-guard
+  description: Validate git commit message against Conventional Commits specification
+  entry: commit-msg-guard check
+  language: python
+  stages: [commit-msg]
+  always_run: true
