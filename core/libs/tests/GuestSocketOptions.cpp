@@ -16,6 +16,7 @@ int APS5_VABI setsockopt_nid_postfix(int, int, int, const void*, std::uint32_t);
 int APS5_VABI getsockopt_nid_postfix(int, int, int, void*, std::uint32_t*);
 int APS5_VABI fcntl_nid_postfix(int, int, ...);
 int APS5_VABI poll_nid_postfix(void*, std::uint32_t, int);
+int APS5_VABI socketpair_nid_postfix(int, int, int, int*);
 int APS5_VABI close_nid_postfix(int);
 int* APS5_VABI __error_nid_postfix();
 }
@@ -37,9 +38,11 @@ constexpr int SoNoSigpipe = 0x800;
 constexpr int SoSendBuffer = 0x1001;
 constexpr int SoError = 0x1007;
 constexpr int SoType = 0x1008;
+constexpr int ErrorFault = 14;
 constexpr int ErrorInvalid = 22;
 constexpr int ErrorDomain = 33;
 constexpr int ErrorNoProtocolOption = 42;
+constexpr int ErrorNotSupported = 45;
 constexpr int ErrorConnectionRefused = 61;
 constexpr int ErrorBadDescriptor = 9;
 
@@ -73,6 +76,10 @@ void SetInt(int descriptor, int option, int value) {
 
 bool SetFails(int descriptor, int level, int option, const void* value, std::uint32_t length, int error) {
     return setsockopt_nid_postfix(descriptor, level, option, value, length) == -1 && *__error_nid_postfix() == error;
+}
+
+bool GetFails(int descriptor, int level, int option, void* value, std::uint32_t* length, int error) {
+    return getsockopt_nid_postfix(descriptor, level, option, value, length) == -1 && *__error_nid_postfix() == error;
 }
 
 std::array<std::uint8_t, 16> Loopback(std::uint16_t portNetworkOrder) {
@@ -216,6 +223,112 @@ void UnknownRequestsFail() {
     Require(close_nid_postfix(stream) == 0, "close failed");
 }
 
+void NullPointersFollowFreeBsd() {
+    const int stream = socket_nid_postfix(2, Stream, 0);
+    Require(stream >= 0, "socket failed");
+    int one = 1;
+    Require(SetFails(stream, SolSocket, SoKeepAlive, nullptr, sizeof(one), ErrorFault), "setsockopt with null value and positive length fails with EFAULT (14)");
+    Require(SetFails(-1, SolSocket, SoKeepAlive, nullptr, sizeof(one), ErrorFault), "setsockopt with null value and positive length validates before descriptor lookup");
+    Require(SetFails(stream, SolSocket, SoKeepAlive, &one, -1, ErrorInvalid), "setsockopt with negative length fails with EINVAL (22)");
+    Require(SetFails(-1, SolSocket, SoKeepAlive, &one, -1, ErrorInvalid), "setsockopt with negative length validates before descriptor lookup");
+    Require(SetFails(stream, SolSocket, SoKeepAlive, nullptr, 0, ErrorInvalid), "setsockopt with null value and length 0 fails with EINVAL (22)");
+    Require(SetFails(-1, SolSocket, SoKeepAlive, nullptr, 0, ErrorBadDescriptor), "setsockopt with null value and length 0 checks descriptor");
+
+    Require(GetFails(stream, SolSocket, SoType, &one, nullptr, ErrorFault), "getsockopt with non-null value and null length pointer fails with EFAULT (14)");
+    Require(GetFails(-1, SolSocket, SoType, &one, nullptr, ErrorFault), "getsockopt with non-null value and null length pointer validates before descriptor lookup");
+    std::uint32_t negativeLength = static_cast<std::uint32_t>(-1);
+    Require(GetFails(stream, SolSocket, SoType, &one, &negativeLength, ErrorInvalid), "getsockopt with negative length fails with EINVAL (22)");
+    Require(GetFails(-1, SolSocket, SoType, &one, &negativeLength, ErrorInvalid), "getsockopt with negative length validates before descriptor lookup");
+
+    std::uint32_t zeroLength = 0;
+    Require(getsockopt_nid_postfix(stream, SolSocket, SoType, nullptr, &zeroLength) == 0 && zeroLength == 0, "getsockopt with null value and zero length succeeds");
+    std::uint32_t nonZeroLength = sizeof(one);
+    Require(GetFails(stream, SolSocket, SoType, nullptr, &nonZeroLength, ErrorFault), "getsockopt with null value and non-zero length fails with EFAULT (14)");
+
+    Require(GetFails(-1, SolSocket, SoType, nullptr, nullptr, ErrorBadDescriptor), "getsockopt with null value and null length checks descriptor first");
+    Require(GetFails(stream, SolSocket, 0x7fff, nullptr, nullptr, ErrorNoProtocolOption), "getsockopt with null value and null length checks option before copyout");
+    Require(GetFails(stream, 0, SoType, nullptr, nullptr, ErrorNoProtocolOption), "getsockopt with null value and null length checks level before copyout");
+    Require(GetFails(stream, SolSocket, SoType, nullptr, nullptr, ErrorFault), "getsockopt with null value and null length fails with EFAULT (14) on copyout");
+    Require(close_nid_postfix(stream) == 0, "close failed");
+}
+
+void UnknownLevelsFollowFreeBsd() {
+    int local[2]{-1, -1};
+    Require(socketpair_nid_postfix(1, Stream, 0, local) == 0, "socketpair failed");
+    int one = 1;
+    std::uint32_t size = sizeof(one);
+    Require(SetFails(local[0], 0, 1, &one, sizeof(one), ErrorNotSupported), "Unix socket level 0 setsockopt fails with EOPNOTSUPP (45)");
+    size = sizeof(one);
+    Require(GetFails(local[0], 0, 1, &one, &size, ErrorNotSupported), "Unix socket level 0 getsockopt fails with EOPNOTSUPP (45)");
+    Require(SetFails(local[0], 6, 1, &one, sizeof(one), ErrorInvalid), "Unix socket level 6 setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(local[0], 6, 1, &one, &size, ErrorInvalid), "Unix socket level 6 getsockopt fails with EINVAL (22)");
+    Require(SetFails(local[0], 41, 1, &one, sizeof(one), ErrorInvalid), "Unix socket level 41 setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(local[0], 41, 1, &one, &size, ErrorInvalid), "Unix socket level 41 getsockopt fails with EINVAL (22)");
+    Require(SetFails(local[0], 9999, 1, &one, sizeof(one), ErrorInvalid), "Unix socket unknown level setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(local[0], 9999, 1, &one, &size, ErrorInvalid), "Unix socket unknown level getsockopt fails with EINVAL (22)");
+    Require(close_nid_postfix(local[0]) == 0 && close_nid_postfix(local[1]) == 0, "close failed");
+
+    const int stream4 = socket_nid_postfix(2, Stream, 0);
+    const int datagram4 = socket_nid_postfix(2, Datagram, 0);
+    Require(stream4 >= 0 && datagram4 >= 0, "IPv4 socket failed");
+    Require(SetFails(stream4, 0, 1, &one, sizeof(one), ErrorNoProtocolOption), "IPv4 stream level 0 setsockopt fails with ENOPROTOOPT (42)");
+    size = sizeof(one);
+    Require(GetFails(stream4, 0, 1, &one, &size, ErrorNoProtocolOption), "IPv4 stream level 0 getsockopt fails with ENOPROTOOPT (42)");
+    Require(SetFails(stream4, 17, 1, &one, sizeof(one), ErrorInvalid), "IPv4 stream level 17 setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(stream4, 17, 1, &one, &size, ErrorInvalid), "IPv4 stream level 17 getsockopt fails with EINVAL (22)");
+    Require(SetFails(stream4, 41, 1, &one, sizeof(one), ErrorInvalid), "IPv4 stream level 41 setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(stream4, 41, 1, &one, &size, ErrorInvalid), "IPv4 stream level 41 getsockopt fails with EINVAL (22)");
+    Require(SetFails(stream4, 9999, 1, &one, sizeof(one), ErrorInvalid), "IPv4 stream unknown level setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(stream4, 9999, 1, &one, &size, ErrorInvalid), "IPv4 stream unknown level getsockopt fails with EINVAL (22)");
+
+    Require(SetFails(datagram4, 0, 1, &one, sizeof(one), ErrorNoProtocolOption), "IPv4 datagram level 0 setsockopt fails with ENOPROTOOPT (42)");
+    size = sizeof(one);
+    Require(GetFails(datagram4, 0, 1, &one, &size, ErrorNoProtocolOption), "IPv4 datagram level 0 getsockopt fails with ENOPROTOOPT (42)");
+    Require(SetFails(datagram4, 17, 1, &one, sizeof(one), ErrorNoProtocolOption), "IPv4 datagram level 17 setsockopt fails with ENOPROTOOPT (42)");
+    size = sizeof(one);
+    Require(GetFails(datagram4, 17, 1, &one, &size, ErrorNoProtocolOption), "IPv4 datagram level 17 getsockopt fails with ENOPROTOOPT (42)");
+    Require(SetFails(datagram4, 6, 1, &one, sizeof(one), ErrorInvalid), "IPv4 datagram level 6 setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(datagram4, 6, 1, &one, &size, ErrorInvalid), "IPv4 datagram level 6 getsockopt fails with EINVAL (22)");
+    Require(SetFails(datagram4, 41, 1, &one, sizeof(one), ErrorInvalid), "IPv4 datagram level 41 setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(datagram4, 41, 1, &one, &size, ErrorInvalid), "IPv4 datagram level 41 getsockopt fails with EINVAL (22)");
+    Require(SetFails(datagram4, 9999, 1, &one, sizeof(one), ErrorInvalid), "IPv4 datagram unknown level setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(datagram4, 9999, 1, &one, &size, ErrorInvalid), "IPv4 datagram unknown level getsockopt fails with EINVAL (22)");
+    Require(close_nid_postfix(stream4) == 0 && close_nid_postfix(datagram4) == 0, "close failed");
+
+    const int stream6 = socket_nid_postfix(28, Stream, 0);
+    const int datagram6 = socket_nid_postfix(28, Datagram, 0);
+    Require(stream6 >= 0 && datagram6 >= 0, "IPv6 socket failed");
+    Require(SetFails(stream6, 0, 1, &one, sizeof(one), ErrorInvalid), "IPv6 stream level 0 setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(stream6, 0, 1, &one, &size, ErrorInvalid), "IPv6 stream level 0 getsockopt fails with EINVAL (22)");
+    Require(SetFails(stream6, 17, 1, &one, sizeof(one), ErrorInvalid), "IPv6 stream level 17 setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(stream6, 17, 1, &one, &size, ErrorInvalid), "IPv6 stream level 17 getsockopt fails with EINVAL (22)");
+    Require(SetFails(stream6, 9999, 1, &one, sizeof(one), ErrorInvalid), "IPv6 stream unknown level setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(stream6, 9999, 1, &one, &size, ErrorInvalid), "IPv6 stream unknown level getsockopt fails with EINVAL (22)");
+
+    Require(SetFails(datagram6, 0, 1, &one, sizeof(one), ErrorInvalid), "IPv6 datagram level 0 setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(datagram6, 0, 1, &one, &size, ErrorInvalid), "IPv6 datagram level 0 getsockopt fails with EINVAL (22)");
+    Require(SetFails(datagram6, 6, 1, &one, sizeof(one), ErrorInvalid), "IPv6 datagram level 6 setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(datagram6, 6, 1, &one, &size, ErrorInvalid), "IPv6 datagram level 6 getsockopt fails with EINVAL (22)");
+    Require(SetFails(datagram6, 9999, 1, &one, sizeof(one), ErrorInvalid), "IPv6 datagram unknown level setsockopt fails with EINVAL (22)");
+    size = sizeof(one);
+    Require(GetFails(datagram6, 9999, 1, &one, &size, ErrorInvalid), "IPv6 datagram unknown level getsockopt fails with EINVAL (22)");
+    Require(close_nid_postfix(stream6) == 0 && close_nid_postfix(datagram6) == 0, "close failed");
+}
+
 }
 
 int main() {
@@ -225,5 +338,7 @@ int main() {
     LingerFollowsFreeBsd();
     LengthsFollowFreeBsd();
     UnknownRequestsFail();
+    NullPointersFollowFreeBsd();
+    UnknownLevelsFollowFreeBsd();
     return 0;
 }

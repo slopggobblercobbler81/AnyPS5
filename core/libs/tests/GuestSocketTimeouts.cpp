@@ -60,6 +60,7 @@ constexpr int ReceiveBuffer = 0x1002;
 constexpr int SendTimeout = 0x1005;
 constexpr int ReceiveTimeout = 0x1006;
 constexpr int DontWait = 0x80;
+constexpr int Fault = 14;
 constexpr int Invalid = 22;
 constexpr int Domain = 33;
 constexpr int WouldBlock = 35;
@@ -102,6 +103,8 @@ int main() {
     Require(Fails(Set(datagram, ReceiveTimeout, 0, 1000000), Domain));
     Timeval time{0, 0};
     Require(Fails(setsockopt_nid_postfix(datagram, SocketLevel, ReceiveTimeout, &time, sizeof(time) - 1), Invalid));
+    Require(Fails(setsockopt_nid_postfix(datagram, SocketLevel, ReceiveTimeout, nullptr, sizeof(time)), Fault));
+    Require(Fails(setsockopt_nid_postfix(datagram, SocketLevel, SendTimeout, nullptr, sizeof(time)), Fault));
     Require(Reads(datagram, ReceiveTimeout, 2, 0));
     std::int64_t seconds = -1;
     std::uint32_t length = sizeof(seconds);

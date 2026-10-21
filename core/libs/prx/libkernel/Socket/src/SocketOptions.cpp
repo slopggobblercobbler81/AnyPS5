@@ -39,6 +39,7 @@ constexpr int GuestTcpNoDelay = 1;
 constexpr int GuestTcpNoDelayFlag = 4;
 constexpr int GuestIpv6Only = 27;
 
+constexpr int ErrorFault = 14;
 constexpr int ErrorInvalid = 22;
 constexpr int ErrorDomain = 33;
 constexpr int ErrorNoProtocolOption = 42;
@@ -89,7 +90,7 @@ int NativeBoolean(int option) {
 
 int Copy(void* output, std::uint32_t* length, const void* value, std::uint32_t size) {
     const std::uint32_t count = std::min(*length, size);
-    if (count != 0 && !output) return ErrorInvalid;
+    if (count != 0 && !output) return ErrorFault;
     if (count != 0) std::memcpy(output, value, count);
     *length = count;
     return 0;
@@ -101,7 +102,7 @@ int SetSocketLevelOption(std::uintptr_t native, SocketOptionState& state, int op
     const auto handle = static_cast<NativeHandle>(native);
     if (option == GuestLinger) {
         if (length < sizeof(GuestLingerValue)) return ErrorInvalid;
-        if (!value) return ErrorInvalid;
+        if (!value) return ErrorFault;
         GuestLingerValue guest;
         std::memcpy(&guest, value, sizeof(guest));
         if (guest.seconds < 0 || guest.seconds > MaximumLinger) return ErrorDomain;
@@ -119,7 +120,7 @@ int SetSocketLevelOption(std::uintptr_t native, SocketOptionState& state, int op
     }
     if (option == GuestSendTimeout || option == GuestReceiveTimeout) {
         if (length < sizeof(GuestTimeval)) return ErrorInvalid;
-        if (!value) return ErrorInvalid;
+        if (!value) return ErrorFault;
         GuestTimeval time;
         std::memcpy(&time, value, sizeof(time));
         if (time.seconds < 0 || time.microseconds < 0 || time.microseconds >= 1000000) return ErrorDomain;
@@ -128,7 +129,7 @@ int SetSocketLevelOption(std::uintptr_t native, SocketOptionState& state, int op
     }
     if (option == GuestNoSigpipe || option == GuestNonBlocking) {
         if (length < sizeof(int)) return ErrorInvalid;
-        if (!value) return ErrorInvalid;
+        if (!value) return ErrorFault;
         int number;
         std::memcpy(&number, value, sizeof(number));
         if (option == GuestNoSigpipe) {
@@ -148,7 +149,7 @@ int SetSocketLevelOption(std::uintptr_t native, SocketOptionState& state, int op
     const bool native_boolean = NativeBoolean(option) != -1;
     if (native_boolean || option == GuestSendBuffer || option == GuestReceiveBuffer) {
         if (length < sizeof(int)) return ErrorInvalid;
-        if (!value) return ErrorInvalid;
+        if (!value) return ErrorFault;
         int number;
         std::memcpy(&number, value, sizeof(number));
         if (option == GuestSendBuffer || option == GuestReceiveBuffer) {
@@ -229,7 +230,7 @@ int SetTcpLevelOption(std::uintptr_t native, bool tcp, int option, const void* v
     if (!tcp) return ErrorInvalid;
     if (option != GuestTcpNoDelay) return ErrorNoProtocolOption;
     if (length < sizeof(int)) return ErrorInvalid;
-    if (!value) return ErrorInvalid;
+    if (!value) return ErrorFault;
     int number;
     std::memcpy(&number, value, sizeof(number));
     const int enabled = number != 0 ? 1 : 0;
@@ -251,7 +252,7 @@ int SetIpv6LevelOption(std::uintptr_t native, bool ipv6, int option, const void*
     if (!ipv6) return ErrorInvalid;
     if (option != GuestIpv6Only) return ErrorNoProtocolOption;
     if (length != sizeof(int)) return ErrorInvalid;
-    if (!value) return ErrorInvalid;
+    if (!value) return ErrorFault;
     int number;
     std::memcpy(&number, value, sizeof(number));
     const int enabled = number != 0 ? 1 : 0;
