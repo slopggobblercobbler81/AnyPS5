@@ -136,6 +136,11 @@ int main() {
     Require(listen_nid_postfix(listener, 4) == 0);
     std::uint32_t addressSize = address.size();
     Require(getsockname_nid_postfix(listener, address.data(), &addressSize) == 0);
+    Require(Set(listener, ReceiveTimeout, 0, 60000) == 0);
+    started = Clock::now();
+    Require(Fails(accept_nid_postfix(listener, nullptr, nullptr), WouldBlock));
+    Require(Clock::now() - started >= std::chrono::milliseconds(59));
+    Require(Set(listener, ReceiveTimeout, 3, 0) == 0);
     const int client = socket_nid_postfix(2, 1, 0);
     Require(client >= 0 && setsockopt_nid_postfix(client, SocketLevel, SendBuffer, &small, sizeof(small)) == 0);
     Require(connect_nid_postfix(client, address.data(), address.size()) == 0);
